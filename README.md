@@ -72,7 +72,7 @@ Ensure you use `User_Setups/SetupXX_TDisplay_S3.h` or configure `User_Setup.h` a
 
 The ESP32 expects navigation data in this format:
 
-```json
+```
 [1, <speed>, <direction>, <message>]
 ```
 
