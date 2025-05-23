@@ -2,7 +2,6 @@
 
 ![Device Preview](image/gif.gif)
 
-> *Replace `images/device_preview.jpg` with your own device photo or hosted image link.*
 
 ## 🚀 Overview
 
@@ -23,7 +22,7 @@ A Bluetooth Low Energy (BLE) Heads-Up Display (HUD) for the **LilyGO T-Display-S
 
 ---
 
-## 📲 Compatible Mobile App
+## 📲 Compatible iOS Mobile App
 
 Currently supported on iOS via **Sygic GPS Navigation & Maps**: [Download](https://apps.apple.com/us/app/sygic-gps-navigation-maps/id585193266)
 
