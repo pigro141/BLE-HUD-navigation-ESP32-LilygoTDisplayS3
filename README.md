@@ -1,6 +1,6 @@
 # BLE HUD for LilyGO T-Display-S3
 
-![Device Preview](images/device_preview.jpg)
+![Device Preview](image/gif.gif)
 
 > *Replace `images/device_preview.jpg` with your own device photo or hosted image link.*
 
@@ -18,7 +18,8 @@ A Bluetooth Low Energy (BLE) Heads-Up Display (HUD) for the **LilyGO T-Display-S
 
 ### 🔗 Purchase LilyGO T-Display-S3
 
-* 🛒 [Buy on Amazon (Affiliate Link)](https://amzn.to/3UcXZFe)
+* 🛒 [Buy on Aliexpress (Affiliate Link)](https://s.click.aliexpress.com/e/_EIARYJM)
+* 🛒 [Buy on Alibaba (Affiliate Link)](https://www.alibaba.com/x/AzeWnt?ck=pdp)
 
 ---
 
@@ -93,7 +94,7 @@ The ESP32 expects navigation data in this format:
 
 ## 📸 Screenshots
 
-*(Insert photos of device in action)*
+![Device Preview](image/image1.jpg)
 
 ---
 
@@ -101,7 +102,6 @@ The ESP32 expects navigation data in this format:
 
 * [Alexander Lavrushko](https://github.com/alexanderlavrushko) — original BLE HUD codebase
 * [LilyGO](https://github.com/Xinyuan-LilyGO) — hardware and display config support
-* [Bodmer](https://github.com/Bodmer) — creator of `TFT_eSPI`
 
 ---
 
