@@ -33,11 +33,6 @@ Currently supported on iOS via **Sygic GPS Navigation & Maps**: [Download](https
 3. Navigate: About → BLE HUD → Start
 4. Grant Bluetooth permission
 
-> Notes:
->
-> * BLE HUD must be re-enabled after each app restart
-> * Works only in foreground
-> * "No route" may briefly appear when recalculating navigation
 
 ---
 
