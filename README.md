@@ -95,7 +95,6 @@ The ESP32 expects navigation data in this format:
 ## 🙌 Acknowledgements
 
 * [Alexander Lavrushko](https://github.com/alexanderlavrushko) — original BLE HUD codebase
-* [LilyGO](https://github.com/Xinyuan-LilyGO) — hardware and display config support
 
 ---
 
