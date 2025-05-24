@@ -41,7 +41,7 @@ Currently supported on iOS via **Sygic GPS Navigation & Maps**: [Download](https
 ### Prerequisites
 
 * Arduino IDE with ESP32 board support
-* Clone this repo or download the `.ino` sketch
+* Clone this repo or download the `.ino` sketch and other files
 
 ### Libraries Required
 
