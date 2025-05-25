@@ -45,10 +45,12 @@ enum DisplayState {
   STATE_STARTING,
   STATE_DISCONNECTED,
   STATE_NO_ROUTE,
-  STATE_NAVIGATING
+  STATE_NAVIGATING,
+  STATE_RECALCULATING
 };
 DisplayState g_currentState = STATE_STARTING;
-DisplayState g_lastState = STATE_STARTING; // Per sapere quando ridisegnare
+DisplayState g_lastState = STATE_STARTING;
+DisplayState g_previousState = STATE_STARTING;
 
 // Variabili per delta-update
 uint8_t lastSpeed = 0;
@@ -56,7 +58,6 @@ uint8_t lastDir   = DirectionNone;
 
 // ---- NUOVE FUNZIONI GRAFICHE ----
 
-// Funzione per la nuova animazione di avvio
 void playStartupAnimation() {
   tft.fillScreen(COLOR_BLACK);
   tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
@@ -75,11 +76,10 @@ void playStartupAnimation() {
     tft.fillRect(barX + 2, barY + 2, i, barHeight - 4, COLOR_BLUE);
     delay(15);
   }
-  delay(500); // Pausa finale
-  tft.setTextDatum(TL_DATUM); // Ripristina il datum di default
+  delay(500);
+  tft.setTextDatum(TL_DATUM);
 }
 
-// Funzione per mostrare la schermata di disconnessione
 void showDisconnectedScreen() {
   tft.fillScreen(COLOR_BLACK);
   tft.setTextColor(COLOR_RED, COLOR_BLACK);
@@ -90,10 +90,8 @@ void showDisconnectedScreen() {
   tft.setTextSize(1);
   tft.drawString("In attesa di connessione...", tft.width() / 2, tft.height() / 2 + 15);
   tft.setTextDatum(TL_DATUM);
-  tft.setTextSize(1);
 }
 
-// Funzione per mostrare la schermata "Nessun Percorso"
 void showNoRouteScreen() {
   tft.fillScreen(COLOR_BLACK);
   tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
@@ -103,39 +101,15 @@ void showNoRouteScreen() {
   tft.setTextSize(1);
   tft.drawString("In attesa di un percorso...", tft.width() / 2, tft.height() / 2 + 15);
   tft.setTextDatum(TL_DATUM);
-  tft.setTextSize(1);
 }
 
-// ---- BLE Callbacks ----
-class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) override {
-    g_deviceConnected = true;
-    g_lastActivityTime = millis();
-    g_currentState = STATE_NO_ROUTE; // Connesso, ma non ancora in navigazione
-  }
-  void onDisconnect(BLEServer* pServer) override {
-    g_deviceConnected = false;
-    g_currentState = STATE_DISCONNECTED; // Disconnesso
-    BLEDevice::startAdvertising();
-  }
-};
-
-class MyCharWriteCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic* pCharacteristic) override {
-    g_lastActivityTime = millis();
-    auto value = pCharacteristic->getValue();
-    if (!value.empty()) {
-      g_naviData = value;
-      // ---- LOGICA DI STATO BASATA SUI DATI ----
-      if (g_naviData == "No route") {
-        g_currentState = STATE_NO_ROUTE;
-      } else {
-        g_currentState = STATE_NAVIGATING;
-        g_isNaviDataUpdated = true;
-      }
-    }
-  }
-};
+void showRecalculatingScreen() {
+  tft.fillScreen(COLOR_BLACK);
+  tft.setTextColor(COLOR_MAGENTA, COLOR_BLACK);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  tft.drawString("Ricalcolo...", tft.width() / 2, tft.height() / 2);
+}
 
 // ---- Helpers ----
 uint16_t Color4To16bit(uint8_t c4) {
@@ -175,7 +149,6 @@ void Draw4bitImageProgmemScaled(int x, int y, int w, int h, const uint8_t* img, 
 }
 
 const uint8_t* ImageFromDirection(uint8_t direction) {
-  // (stessa implementazione...)
   switch (direction) {
     case DirectionNone: return nullptr;
     case DirectionStart:
@@ -273,32 +246,68 @@ void updateDirection(uint8_t dir) {
   if (img) Draw4bitImageProgmemScaled(x, y, 64, 64, img, scale);
 }
 
-// ---- Setup ----
+// ---- BLE Callbacks ----
+class MyServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) override {
+    g_deviceConnected = true;
+    g_lastActivityTime = millis();
+    g_previousState = g_currentState;
+    g_currentState = STATE_NO_ROUTE;
+  }
+  void onDisconnect(BLEServer* pServer) override {
+    g_deviceConnected = false;
+    g_previousState = g_currentState;
+    g_currentState = STATE_DISCONNECTED;
+    BLEDevice::startAdvertising();
+  }
+};
+
+class MyCharWriteCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) override {
+    g_lastActivityTime = millis();
+    auto value = pCharacteristic->getValue();
+    if (value.empty()) return;
+
+    g_naviData = value;
+    g_previousState = g_currentState;
+
+    if (g_naviData.find("No route") != std::string::npos) {
+      // Ricevuto No route in qualsiasi posizione
+      if (g_previousState == STATE_NAVIGATING) {
+        g_currentState = STATE_RECALCULATING;
+      } else {
+        g_currentState = STATE_NO_ROUTE;
+      }
+      g_isNaviDataUpdated = false;
+
+    } else if ((uint8_t)g_naviData[0] == 1) {
+      g_currentState = STATE_NAVIGATING;
+      g_isNaviDataUpdated = true;
+
+    } else {
+      Serial.println("Dati BLE non riconosciuti");
+    }
+  }
+};
+
 void setup() {
   Serial.begin(115200);
   tft.init();
   tft.setRotation(0);
 
-  // ---- NUOVA ANIMAZIONE DI AVVIO ----
   playStartupAnimation();
 
-  Serial.println("BLE init started");
   BLEDevice::init("ESP32 HUD");
   g_pServer = BLEDevice::createServer();
   g_pServer->setCallbacks(new MyServerCallbacks());
   BLEService* pService = g_pServer->createService(SERVICE_UUID);
 
-  {
-    uint32_t charProperties = BLECharacteristic::PROPERTY_INDICATE;
-    g_pCharIndicate = pService->createCharacteristic(CHAR_INDICATE_UUID, charProperties);
-    g_pCharIndicate->addDescriptor(new BLE2902());
-    g_pCharIndicate->setValue("");
-  }
-  {
-    uint32_t charProperties = BLECharacteristic::PROPERTY_WRITE;
-    BLECharacteristic* pCharWrite = pService->createCharacteristic(CHAR_WRITE_UUID, charProperties);
-    pCharWrite->setCallbacks(new MyCharWriteCallbacks());
-  }
+  g_pCharIndicate = pService->createCharacteristic(CHAR_INDICATE_UUID, BLECharacteristic::PROPERTY_INDICATE);
+  g_pCharIndicate->addDescriptor(new BLE2902());
+  g_pCharIndicate->setValue("");
+
+  BLECharacteristic* pCharWrite = pService->createCharacteristic(CHAR_WRITE_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pCharWrite->setCallbacks(new MyCharWriteCallbacks());
 
   pService->start();
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
@@ -307,19 +316,18 @@ void setup() {
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
-  Serial.println("BLE init done");
 
-  // ---- CONFIGURAZIONE PULSANTI MIGLIORATA ----
-  btnDeepSleep.setLongClickTime(1000); // Aumentato a 1 secondo per evitare attivazioni accidentali
+    // Configurazione pulsante Deep Sleep: long click -> deep sleep
+  btnDeepSleep.setLongClickTime(1000);
   btnDeepSleep.setLongClickDetectedHandler([](Button2& b) {
-    g_sleepRequested = true;
     DrawBottomMessage("SLEEP", COLOR_MAGENTA);
+    // Entra subito in deep sleep
+    esp_deep_sleep_start();
   });
-  // La logica per andare a dormire è stata spostata nel loop per coerenza
   btnDeepSleep.setReleasedHandler([](Button2& b) {
     if (g_sleepRequested) {
-        esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
-        esp_deep_sleep_start();
+      esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
+      esp_deep_sleep_start();
     }
   });
 
@@ -329,18 +337,15 @@ void setup() {
     btnVol.setReleasedHandler([](Button2&) { g_showVoltage = false; });
   }
 
-  // Imposta lo stato iniziale
   g_currentState = STATE_DISCONNECTED;
 }
 
-// ---- Loop Principale ----
 void loop() {
   btnDeepSleep.loop();
   btnVol.loop();
 
-  // Gestione del cambio di stato per ridisegnare la schermata solo quando necessario
   if (g_currentState != g_lastState) {
-    g_sleepRequested = false; // Annulla la richiesta di sleep se lo stato cambia
+    g_sleepRequested = false;
     switch (g_currentState) {
       case STATE_DISCONNECTED:
         showDisconnectedScreen();
@@ -348,60 +353,51 @@ void loop() {
       case STATE_NO_ROUTE:
         showNoRouteScreen();
         break;
+      case STATE_RECALCULATING:
+        showRecalculatingScreen();
+        break;
       case STATE_NAVIGATING:
-        // Pulisce lo schermo per preparare l'interfaccia di navigazione
         tft.fillScreen(COLOR_BLACK);
-        // Forza l'aggiornamento completo della prima schermata di navigazione
-        lastSpeed = -1; 
-        lastDir = -1;
+        lastSpeed = 0xFF;
+        lastDir = 0xFF;
         break;
       case STATE_STARTING:
-        // non fa nulla, gestito in setup
         break;
     }
-    g_lastState = g_currentState; // Aggiorna l'ultimo stato
+    g_lastState = g_currentState;
   }
 
-  // Logica di aggiornamento continuo basata sullo stato attuale
-  if (g_currentState == STATE_NAVIGATING) {
-    if (g_isNaviDataUpdated) {
-      g_isNaviDataUpdated = false;
-      auto &d = g_naviData;
-      // ---- Blocco di navigazione originale (non modificato) ----
-      if (!d.empty() && d[0] == 1) {
-        updateSpeed(d.size() > 1 ? (uint8_t)d[1] : 0);
-        updateDirection(d.size() > 2 ? (uint8_t)d[2] : DirectionNone);
-        if (d.size() > 3) {
-          const char* msg = d.c_str() + 3;
-          int sz = (strlen(msg) > 8) ? 2 : 4;
-          int charH = 8 * sz + 4;
-          int my = 256 + 20;
-          
-          tft.fillRect(0, my, tft.width(), charH, COLOR_BLACK);
-
-          int msgW = strlen(msg) * 6 * sz;
-          int mx = (tft.width() - msgW) / 2;
-          DrawMessage(msg, mx, my, sz, COLOR_WHITE);
-        }
+  if (g_currentState == STATE_NAVIGATING && g_isNaviDataUpdated) {
+    g_isNaviDataUpdated = false;
+    auto &d = g_naviData;
+    if (!d.empty() && (uint8_t)d[0] == 1) {
+      updateSpeed(d.size() > 1 ? (uint8_t)d[1] : 0);
+      updateDirection(d.size() > 2 ? (uint8_t)d[2] : DirectionNone);
+      if (d.size() > 3) {
+        const char* msg = d.c_str() + 3;
+        int sz = (strlen(msg) > 8) ? 2 : 4;
+        int charH = 8 * sz + 4;
+        int my = tft.height() - charH - 10;
+        tft.fillRect(0, my, tft.width(), charH, COLOR_BLACK);
+        int msgW = strlen(msg) * 6 * sz;
+        int mx = (tft.width() - msgW) / 2;
+        DrawMessage(msg, mx, my, sz, COLOR_WHITE);
       }
-      // ---- Fine blocco originale ----
     }
   }
 
-  // Gestione messaggi e ping
   if (g_showVoltage) {
     static uint32_t vt = 0;
     if (millis() - vt > 1000) {
       vt = millis();
-      char vs[16];
-      sprintf(vs, "%.2f V", g_voltage.measureVolts());
+      char vs[16]; sprintf(vs, "%.2f V", g_voltage.measureVolts());
       DrawBottomMessage(vs, COLOR_WHITE);
     }
   } else if (!g_sleepRequested && g_deviceConnected) {
-      if (millis() - g_lastActivityTime > 4000) {
-        g_lastActivityTime = millis();
-        g_pCharIndicate->indicate();
-      }
+    if (millis() - g_lastActivityTime > 4000) {
+      g_lastActivityTime = millis();
+      g_pCharIndicate->indicate();
+    }
   }
 
   delay(10);
